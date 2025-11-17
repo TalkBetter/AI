@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>我的小音樂頁</title>
+  <style>
+    :root { --radius: 16px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans TC, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; margin: 0; background: #f7f7fb; color: #1f2937; }
+    .wrap { max-width: 720px; margin: 40px auto; padding: 24px; background: #ffffff; border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p.lead { margin: 0 0 16px; color: #6b7280; }
+    .player { display: grid; gap: 12px; margin-top: 12px; }
+    .now { display:flex; align-items:center; gap:12px; padding:12px; border:1px solid #eee; border-radius: 12px; background:#fafafa; }
+    .now .badge { display:inline-block; min-width: 28px; text-align:center; background:#111827; color:#fff; border-radius:8px; padding:4px 8px; font-weight:600; }
+    .list { list-style: none; padding: 0; margin: 8px 0 0; }
+    .item { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius: 10px; cursor:pointer; border:1px solid #eee; margin: 8px 0; transition: transform .04s ease, background .2s ease; }
+    .item:hover { background:#f3f4f6; transform: translateY(-1px); }
+    .item.active { border-color:#111827; background:#eef2ff; }
+    .item .idx { width:28px; text-align:center; font-weight:700; color:#6b7280; }
+    .item .title { flex:1; font-weight:600; }
+    .item .dur { font-variant-numeric: tabular-nums; color:#6b7280; }
+    .controls { display:flex; gap:8px; align-items:center; }
+    button { border:0; background:#111827; color:#fff; border-radius: 999px; padding:10px 14px; font-weight:700; cursor:pointer; }
+    button.secondary { background:#e5e7eb; color:#111827; }
+    .footer { margin-top: 18px; color:#6b7280; font-size:14px; text-align:center; }
+    .hint { font-size:13px; color:#6b7280; margin-top:6px; }
+    @media (prefers-color-scheme: dark) {
+      body{ background:#0b0b0f; color:#e5e7eb; }
+      .wrap{ background:#111217; box-shadow:none; }
+      .now{ background:#0f1116; border-color:#23262d; }
+      .item{ border-color:#23262d; }
+      .item.active{ background:#0e1a2f; border-color:#3b82f6; }
+      button.secondary{ background:#23262d; color:#e5e7eb; }
+      .hint, .list .dur, .lead, .footer { color:#9aa3b2; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>我的小音樂頁 🎧</h1>
+    <p class="lead">點選清單播放。檔名請與下方 <code>playlist</code> 一致，與此檔同層即可運作。</p>
+
+    <div class="player">
+      <div class="now">
+        <span class="badge">Now</span>
+        <div id="nowTitle">尚未播放</div>
+      </div>
+
+      <audio id="audio" controls preload="metadata" style="width:100%; border-radius:12px;"></audio>
+
+      <div class="controls">
+        <button id="prevBtn" title="上一首">⏮ 上一首</button>
+        <button id="playBtn" class="secondary" title="播放/暫停">⏯ 播放/暫停</button>
+        <button id="nextBtn" title="下一首">⏭ 下一首</button>
+      </div>
+
+      <ul id="list" class="list"></ul>
+      <div class="hint">⚠️ 行動裝置通常禁止自動播放，請先手動點一次播放。</div>
+    </div>
+
+    <div class="footer">© 2025 My Audio Page</div>
+  </main>
+
+  <script>
+    // ▶▶ 在這裡設定你的 5 首歌（檔案需與此 index.html 放在同一資料夾）
+    const playlist = [
+      { title: "Track 1", src: "1.mp3" },
+      { title: "Track 2", src: "2.mp3" },
+      { title: "Track 3", src: "3.mp3" },
+      { title: "Track 4", src: "4.mp3" },
+      { title: "Track 5", src: "5.mp3" }
+    ];
+
+    const audio = document.getElementById('audio');
+    const list = document.getElementById('list');
+    const nowTitle = document.getElementById('nowTitle');
+    const playBtn = document.getElementById('playBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    let current = 0;
+
+    function formatTime(sec){
+      if (!isFinite(sec)) return "--:--";
+      const m = Math.floor(sec/60), s = Math.floor(sec%60);
+      return `${m}:${String(s).padStart(2,'0')}`;
+    }
+
+    function renderList(){
+      list.innerHTML = '';
+      playlist.forEach((t, i) => {
+        const li = document.createElement('li');
+        li.className = 'item' + (i===current ? ' active' : '');
+        li.innerHTML = `<span class="idx">${i+1}</span><span class="title">${t.title}</span><span class="dur" data-i="${i}">--:--</span>`;
+        li.addEventListener('click', () => playAt(i));
+        list.appendChild(li);
+      });
+    }
+
+    function updateNow(){
+      nowTitle.textContent = `${current+1}. ${playlist[current].title}`;
+      [...document.querySelectorAll('.item')].forEach((el, idx)=>{
+        el.classList.toggle('active', idx===current);
+      });
+    }
+
+    function loadDurations(){
+      // 預先讀取每首歌的時長（在同源下可行）
+      playlist.forEach((t, i) => {
+        const a = document.createElement('audio');
+        a.src = t.src;
+        a.preload = 'metadata';
+        a.addEventListener('loadedmetadata', ()=>{
+          const span = document.querySelector(`.dur[data-i="${i}"]`);
+          if (span) span.textContent = formatTime(a.duration);
+        });
+      });
+    }
+
+    function playAt(i){
+      current = i;
+      audio.src = playlist[current].src;
+      audio.play().catch(()=>{/* 可能被瀏覽器攔截，等使用者點擊 */});
+      updateNow();
+    }
+
+    playBtn.addEventListener('click', ()=>{
+      if (audio.paused) audio.play(); else audio.pause();
+    });
+
+    prevBtn.addEventListener('click', ()=>{
+      current = (current - 1 + playlist.length) % playlist.length;
+      playAt(current);
+    });
+
+    nextBtn.addEventListener('click', ()=>{
+      current = (current + 1) % playlist.length;
+      playAt(current);
+    });
+
+    audio.addEventListener('ended', ()=>{
+      // 播完自動跳下一首
+      nextBtn.click();
+    });
+
+    // 初始化
+    renderList();
+    loadDurations();
+    updateNow();
+  </script>
+</body>
+</html>
